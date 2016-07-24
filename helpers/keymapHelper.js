@@ -14,6 +14,10 @@ var ScoreTypes = {
     MULTIPLIER_DOWN: 5
 };
 
+var BonusTypes = {
+    TRIPLE_SCORE: 1
+};
+
 var KeyEvent = {
     CANCEL: 3,
     HELP: 6,

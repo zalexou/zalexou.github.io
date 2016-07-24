@@ -1,19 +1,18 @@
 /**
  * Created by alex on 14/07/2016.
  */
+var frameCount = 0;
+
 var PelGameController = function PelGameController(settings) {
     var _this = this;
-    var ballFactory = new BallFactory();
-    var scoreManager = new ScoreManager(settings);
-    var ballLauncher = new ObjectLauncher({
-        prob: 1.5
-    });
+    var ballFactory, scoreManager,  ballLauncher;
 
     _this.settings = settings;
     _this.context = settings.context;
     _this.paddleSpots = [];
     _this.paddlePosition = 0;
     _this.gameLoopInterval = null;
+    _this.impactDeltaTolerance = 30;
     _this.fps = 120;
     _this.refreshRate = 1000 / _this.fps;
     _this.impactPoints = {
@@ -22,10 +21,15 @@ var PelGameController = function PelGameController(settings) {
     };
     _this.balls = [];
     _this.consecutiveHits = 0;
-    
+    _this.hitFrames = [];
 
 
     var gameView = new PelGameView(settings);
+
+    _this.manualLaunchBall = function() {
+        var ball = createBall().init();
+        _this.balls.push(ball);
+    };
 
     _this.stop = function() {
         clearInterval(_this.gameLoopInterval);
@@ -34,22 +38,37 @@ var PelGameController = function PelGameController(settings) {
     };
     
     _this.go = function() {
-        console.log('game launching');
+        ballFactory = new BallFactory();
+        scoreManager = new ScoreManager(settings);
+        ballLauncher = new ObjectLauncher({
+            prob: 2,
+            canLaunch: ballIsPlayable,
+            create: createBall
+        });
         createPaddleSpots();
         drawPaddleSpots();
         setImpactPoints();
         setPaddlePosition(_this.paddlePosition);
-        createBall();
-        drawBalls();
         listenEvents();
+        //_this.balls.push(createBall().init());
+
         //window.requestAnimationFrame(nextFrame);
         _this.gameLoopInterval = setInterval(nextFrame, _this.refreshRate);
     };
     
-    var drawImpactPoints = function() {
-        gameView.drawImpactPoints(_this.impactPoints);
+    var ballIsPlayable = function(ball) {
+        for(var i = 0; i < ball.collisionFrames.length; i++) {
+            var ballFrame = ball.collisionFrames[i];
+            for(var j = 0; j < _this.hitFrames.length; j++) {
+                var scheduledFrame = _this.hitFrames[j];
+                if(scheduledFrame - _this.impactDeltaTolerance <= ballFrame && scheduledFrame +_this.impactDeltaTolerance >= ballFrame) {
+                    return false;
+                }
+            }
+        }
+        return true;
     };
-    
+
     var createBall = function() {
         var config = {
             maxEntryY:  _this.paddleSpots[0].y() / 2,
@@ -61,7 +80,7 @@ var PelGameController = function PelGameController(settings) {
             minVelocity: 3,
             maxVelocity: 6
         };
-        _this.balls.push(ballFactory.createRandomBall(config));
+        return ballFactory.createRandomBall(config);
     };
     
     var setImpactPoints = function() {
@@ -87,6 +106,7 @@ var PelGameController = function PelGameController(settings) {
 
     var nextFrame = function() {
         var events = [];
+        _this.hitFrames = [];
         scoreManager.setBonus(_this.balls.length);
         gameView.eraseCanvas();
         drawPaddleSpots();
@@ -96,16 +116,21 @@ var PelGameController = function PelGameController(settings) {
             if(ballEvents.length) {
                 events = events.concat(ballEvents);
             }
+            _this.hitFrames = _this.hitFrames.concat(ball.collisionFrames);
         });
 
+        _this.hitFrames = _.uniq(_this.hitFrames);
         handleEvents(events);
-        if(ballLauncher.launch()) {
-            createBall();
+
+        var potentialBall = ballLauncher.launch();
+        if(potentialBall) {
+            _this.balls.push(potentialBall);
         }
 
         drawBalls();
         gameView.drawScore(scoreManager.process());
         gameView.drawMultiplier(scoreManager.multiplier);
+        frameCount++;
     };
 
     var handleEvents = function(events) {
@@ -151,6 +176,7 @@ var PelGameController = function PelGameController(settings) {
                     delete colliders.ball.data.destroy();
                     _this.consecutiveHits = 0;
                     scoreManager.addEvent(createScoreEvent(ScoreTypes.MULTIPLIER_DOWN));
+                    //console.log("miss at frame " ,frameCount);
                 }
             }
         };
